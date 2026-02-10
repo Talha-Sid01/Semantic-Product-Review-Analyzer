@@ -1,0 +1,13 @@
+fastapi
+uvicorn
+streamlit
+langchain
+langchain-groq
+langchain-community
+langchain-huggingface
+chromadb
+beautifulsoup4
+requests
+python-dotenv
+httpx
+fake-useragent
