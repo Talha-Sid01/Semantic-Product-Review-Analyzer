@@ -1,10 +1,17 @@
-__import__('pysqlite3')
 import sys
-sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
-
 import os
+
+# pysqlite3 shim — only needed on Linux (e.g. Streamlit Cloud) where the
+# system SQLite is too old for ChromaDB. On Windows/macOS this is skipped.
+if sys.platform.startswith("linux"):
+    try:
+        __import__('pysqlite3')
+        sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
+    except ImportError:
+        pass  # pysqlite3-binary not installed, continue with system sqlite3
 import time
 import random
+import tempfile
 import streamlit as st
 import shutil
 import json
@@ -231,7 +238,7 @@ class ReviewAnalyzer:
             model="sentence-transformers/all-MiniLM-L6-v2",
         )
 
-        self.persist_directory = "./chroma_db"
+        self.persist_directory = os.path.join(tempfile.gettempdir(), "chroma_db_reviews")
 
     def ingest_and_index(self, url: str, log_fn=None) -> str:
         """Scrape → chunk → embed → store in ChromaDB."""
