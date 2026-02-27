@@ -264,12 +264,21 @@ class ReviewAnalyzer:
         if not splits:
             raise ValueError("No text could be extracted from the page.")
 
-        # Wipe old DB
+        # Wipe old DB — retry on Windows file-lock, fall back to unique path
         if os.path.exists(self.persist_directory):
-            try:
-                shutil.rmtree(self.persist_directory)
-            except Exception:
-                pass
+            for _attempt in range(3):
+                try:
+                    shutil.rmtree(self.persist_directory)
+                    break
+                except Exception:
+                    time.sleep(0.5)
+            else:
+                # Still locked — use a fresh unique directory instead
+                self.persist_directory = os.path.join(
+                    tempfile.gettempdir(), f"chroma_db_{int(time.time())}"
+                )
+
+        os.makedirs(self.persist_directory, exist_ok=True)
 
         # Embed & store
         self.vectorstore = Chroma.from_documents(
@@ -292,39 +301,66 @@ class ReviewAnalyzer:
         )
         context_text = "\n\n".join(doc.page_content for doc in relevant_docs)
 
+        # Strict prompt: ask for minified JSON to reduce chance of truncation/malform
         system_prompt = """You are an expert product reviewer.
-Analyze the provided context (product reviews / details) and produce a "Buying Decision Report".
+Analyze the provided context (product reviews / details) and produce a Buying Decision Report.
 
-Output MUST be valid JSON with exactly these keys:
-- "pros": List of strings (at least 3 if available).
-- "cons": List of strings (at least 2 if available).
-- "verdict": A concise paragraph recommending whether to buy or not.
+You MUST respond with ONLY a single valid JSON object. No explanation, no markdown, no code fences.
+Use this exact structure:
+{"pros":["...", "..."],"cons":["...", "..."],"verdict":"..."}
 
-If the page doesn't contain product/review content, set verdict to explain that.
-Do NOT include markdown code fences in your output."""
+Rules:
+- "pros": array of 3-5 short strings
+- "cons": array of 2-4 short strings  
+- "verdict": one paragraph, recommend buy or not
+- Escape any double-quotes inside strings with backslash
+- If content is not a product page, set verdict to explain that"""
 
         prompt = ChatPromptTemplate.from_messages([
             ("system", system_prompt),
-            ("user", "Context:\n{context}"),
+            ("user", "Context (product reviews):\n{context}"),
         ])
 
         chain = prompt | self.llm | StrOutputParser()
 
         try:
             result = chain.invoke({"context": context_text})
-            clean = re.sub(r"```(?:json)?", "", result).strip().strip("`").strip()
+
+            # ── Aggressive JSON extraction ──────────────────────────────
+            # 1. Strip markdown fences
+            clean = re.sub(r"```(?:json)?\s*|\s*```", "", result).strip()
+            # 2. Remove any leading/trailing non-JSON text
+            start = clean.find("{")
+            end   = clean.rfind("}") + 1
+            if start == -1 or end <= start:
+                raise ValueError("No JSON object found in LLM response")
+            clean = clean[start:end]
+            # 3. Fix common LLM mistakes: trailing commas before } or ]
+            clean = re.sub(r",\s*([}\]])", r"\1", clean)
+            # 4. Try to parse
             try:
                 return json.loads(clean)
             except json.JSONDecodeError:
-                start, end = clean.find("{"), clean.rfind("}") + 1
-                if start != -1 and end > start:
-                    return json.loads(clean[start:end])
-                raise
+                # 5. Last resort: use ast.literal_eval-friendly repair via json repair lib
+                try:
+                    from json_repair import repair_json
+                    return json.loads(repair_json(clean))
+                except Exception:
+                    pass
+                # 6. Absolute fallback: regex-extract each field individually
+                pros_match    = re.search(r'"pros"\s*:\s*(\[.*?\])', clean, re.DOTALL)
+                cons_match    = re.search(r'"cons"\s*:\s*(\[.*?\])', clean, re.DOTALL)
+                verdict_match = re.search(r'"verdict"\s*:\s*"(.*?)(?<!\\)"', clean, re.DOTALL)
+                return {
+                    "pros":    json.loads(pros_match.group(1))    if pros_match    else ["See verdict"],
+                    "cons":    json.loads(cons_match.group(1))    if cons_match    else ["See verdict"],
+                    "verdict": verdict_match.group(1)             if verdict_match else clean[:500],
+                }
         except Exception as e:
             return {
-                "pros": ["Could not parse response"],
-                "cons": [str(e)],
-                "verdict": "Report generation failed. The page may not contain enough review content.",
+                "pros":    ["Analysis complete — see verdict for details"],
+                "cons":    ["Could not structure the response"],
+                "verdict": f"The LLM returned a response that could not be parsed as JSON. Raw error: {str(e)[:200]}",
             }
 
     def chat_query(self, question: str) -> str:
