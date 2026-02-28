@@ -11,9 +11,7 @@ if sys.platform.startswith("linux"):
         pass  # pysqlite3-binary not installed, continue with system sqlite3
 import time
 import random
-import tempfile
 import streamlit as st
-import shutil
 import json
 import re
 import requests
@@ -238,7 +236,6 @@ class ReviewAnalyzer:
             model="sentence-transformers/all-MiniLM-L6-v2",
         )
 
-        self.persist_directory = os.path.join(tempfile.gettempdir(), "chroma_db_reviews")
 
     def ingest_and_index(self, url: str, log_fn=None) -> str:
         """Scrape → chunk → embed → store in ChromaDB."""
@@ -264,28 +261,13 @@ class ReviewAnalyzer:
         if not splits:
             raise ValueError("No text could be extracted from the page.")
 
-        # Wipe old DB — retry on Windows file-lock, fall back to unique path
-        if os.path.exists(self.persist_directory):
-            for _attempt in range(3):
-                try:
-                    shutil.rmtree(self.persist_directory)
-                    break
-                except Exception:
-                    time.sleep(0.5)
-            else:
-                # Still locked — use a fresh unique directory instead
-                self.persist_directory = os.path.join(
-                    tempfile.gettempdir(), f"chroma_db_{int(time.time())}"
-                )
-
-        os.makedirs(self.persist_directory, exist_ok=True)
-
-        # Embed & store
+        # Use in-memory ChromaDB — no disk persistence, no schema mismatch errors,
+        # no file-lock issues. We rebuild fresh on every analysis anyway.
         self.vectorstore = Chroma.from_documents(
             documents=splits,
             embedding=self.embeddings,
-            persist_directory=self.persist_directory,
             collection_name="product_reviews",
+            # No persist_directory → pure in-memory (chromadb 0.5+ default)
         )
 
         return f"Indexed {len(splits)} chunks successfully."
@@ -303,18 +285,18 @@ class ReviewAnalyzer:
 
         # Strict prompt: ask for minified JSON to reduce chance of truncation/malform
         system_prompt = """You are an expert product reviewer.
-          Analyze the provided context (product reviews / details) and produce a Buying Decision Report.
+Analyze the provided context (product reviews / details) and produce a Buying Decision Report.
 
-          You MUST respond with ONLY a single valid JSON object. No explanation, no markdown, no code fences.
-          Use this exact structure:
-          {"pros":["...", "..."],"cons":["...", "..."],"verdict":"..."}
+You MUST respond with ONLY a single valid JSON object. No explanation, no markdown, no code fences.
+Use this exact structure:
+{{"pros":["...", "..."],"cons":["...", "..."],"verdict":"..."}}
 
-          Rules:
-          - "pros": array of 3-5 short strings
-          - "cons": array of 2-4 short strings  
-          - "verdict": one paragraph, recommend buy or not
-          - Escape any double-quotes inside strings with backslash
-          - If content is not a product page, set verdict to explain that"""
+Rules:
+- "pros": array of 3-5 short strings
+- "cons": array of 2-4 short strings  
+- "verdict": one paragraph, recommend buy or not
+- Escape any double-quotes inside strings with backslash
+- If content is not a product page, set verdict to explain that"""
 
         prompt = ChatPromptTemplate.from_messages([
             ("system", system_prompt),
@@ -371,13 +353,13 @@ class ReviewAnalyzer:
         retriever = self.vectorstore.as_retriever(search_kwargs={"k": 5})
 
         template = """Answer the question based ONLY on the following context.
-          If the answer is not in the context, say "I don't see that mentioned in the reviews."
-          Keep answers concise and helpful.
+If the answer is not in the context, say "I don't see that mentioned in the reviews."
+Keep answers concise and helpful.
 
-          Context:
-          {context}
+Context:
+{context}
 
-          Question: {question}"""
+Question: {question}"""
 
         prompt = ChatPromptTemplate.from_template(template)
 
@@ -487,3 +469,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
