@@ -303,18 +303,18 @@ class ReviewAnalyzer:
 
         # Strict prompt: ask for minified JSON to reduce chance of truncation/malform
         system_prompt = """You are an expert product reviewer.
-Analyze the provided context (product reviews / details) and produce a Buying Decision Report.
+          Analyze the provided context (product reviews / details) and produce a Buying Decision Report.
 
-You MUST respond with ONLY a single valid JSON object. No explanation, no markdown, no code fences.
-Use this exact structure:
-{"pros":["...", "..."],"cons":["...", "..."],"verdict":"..."}
+          You MUST respond with ONLY a single valid JSON object. No explanation, no markdown, no code fences.
+          Use this exact structure:
+          {"pros":["...", "..."],"cons":["...", "..."],"verdict":"..."}
 
-Rules:
-- "pros": array of 3-5 short strings
-- "cons": array of 2-4 short strings  
-- "verdict": one paragraph, recommend buy or not
-- Escape any double-quotes inside strings with backslash
-- If content is not a product page, set verdict to explain that"""
+          Rules:
+          - "pros": array of 3-5 short strings
+          - "cons": array of 2-4 short strings  
+          - "verdict": one paragraph, recommend buy or not
+          - Escape any double-quotes inside strings with backslash
+          - If content is not a product page, set verdict to explain that"""
 
         prompt = ChatPromptTemplate.from_messages([
             ("system", system_prompt),
@@ -371,13 +371,13 @@ Rules:
         retriever = self.vectorstore.as_retriever(search_kwargs={"k": 5})
 
         template = """Answer the question based ONLY on the following context.
-If the answer is not in the context, say "I don't see that mentioned in the reviews."
-Keep answers concise and helpful.
+          If the answer is not in the context, say "I don't see that mentioned in the reviews."
+          Keep answers concise and helpful.
 
-Context:
-{context}
+          Context:
+          {context}
 
-Question: {question}"""
+          Question: {question}"""
 
         prompt = ChatPromptTemplate.from_template(template)
 
