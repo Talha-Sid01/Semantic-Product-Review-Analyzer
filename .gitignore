@@ -2,3 +2,24 @@ venv/
 .env
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
+*.log
+
+# Databases
+*.db
+*.sqlite3
+*.wal
+*.shm
+
+# Vector DB (Chroma)
+chroma_db/
+
+# Temporary files
+temp/
+tmp/
+*.tmp
+
+# OS files
+.DS_Store
+Thumbs.db
