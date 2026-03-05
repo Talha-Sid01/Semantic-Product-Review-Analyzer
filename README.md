@@ -120,46 +120,7 @@ All system components are traced within a **single unified project tree**.
 
 # 🧠 System Architecture
 
-<details>
-<summary>Click to View Architecture</summary>
-
-<p align="center">
-  <img src="System_architecture.png" width="900"/>
-</p>
-
-</details>
-
----
-
-### Architecture Flow
-
-
-User Input (Product URL)
-│
-▼
-Review Scraper
-│
-▼
-Text Cleaning & Chunking
-│
-▼
-Embedding Generation
-(HuggingFace - all-MiniLM-L6-v2)
-│
-▼
-Vector Database (ChromaDB)
-│
-▼
-Retriever
-│
-▼
-LLM (Llama-3 via Groq/Ollama)
-│
-▼
-Response Generation
-│
-├── Product Summary
-└── Interactive Chatbot
+![System Architecture](System_architecture.png)
 
 
 ---
@@ -214,7 +175,7 @@ All traces are grouped into a **single project execution tree**, allowing develo
 This makes **debugging and optimization significantly easier**.
 
 Project UI
-![System Architecture](Screenshot 2026-03-04 155655.png)
+![System Architecture](ProjUI.png)
 
 ---
 
